@@ -1,4 +1,12 @@
 # snakepipes_ATAC-seq
+## about author
+
+> author: [赵华男 | ZHAO Hua-nan](https://scholar.google.com/citations?user=ojSVoWQAAAAJ&hl=en)
+>
+> email: hermanzhaozzzz@gmail.com
+>
+> [Zhihu](https://www.zhihu.com/people/hymanzhaozzzz) | [BLOG](http://zhaohuanan.cc)
+## doc
 A standard ATAC-seq snakemake pipeline
 ## env
 ```shell
@@ -16,3 +24,4 @@ snakemake -pr -j 10 -s step.02.Snakefile.smk.py -n
 # 实际运行
 snakemake -pr -j 10 -s step.02.Snakefile.smk.py
 ```
+## project structure
