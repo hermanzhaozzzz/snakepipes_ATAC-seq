@@ -7,7 +7,7 @@
 >
 > [Zhihu](https://www.zhihu.com/people/hymanzhaozzzz) | [BLOG](http://zhaohuanan.cc)
 ## doc
-A standard ATAC-seq snakemake pipeline
+`snakepipes_ATAC-seq` is a standard snakemake pipeline for ATAC-seq sequencing data
 ## env
 ```shell
 conda env create -f conda_env.yml
