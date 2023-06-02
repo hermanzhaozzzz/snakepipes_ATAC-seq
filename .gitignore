@@ -1,6 +1,6 @@
 *.html
 *.csv
-
+*.gz
 ##############
 # common project
 ##############
