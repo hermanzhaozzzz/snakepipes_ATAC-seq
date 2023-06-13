@@ -67,6 +67,9 @@ assert check_cmd("samtools")
 assert check_cmd("samblaster")
 assert check_cmd("gatk")
 assert check_cmd("macs2")
+assert check_cmd("bamCoverage")
+assert check_cmd("computeMatrix")
+assert check_cmd("plotHeatmap")
 FASTP = "fastp"
 BOWTIE2 = 'bowtie2'
 BEDTOOLS = 'bedtools'
@@ -74,6 +77,9 @@ SAMTOOLS = 'samtools'
 SAMBLASTER = 'samblaster'
 MACS2 = 'macs2'
 GATK4 = 'gatk'
+BAM_COVERAGE = 'bamCoverage'
+COMPUTE_MATRIX = 'computeMatrix'
+PLOT_HEATMAP = 'plotHeatmap'
 # ------------------------------------------------------------------->>>>>>>>>>
 # rule all
 # ------------------------------------------------------------------->>>>>>>>>>
@@ -87,10 +93,9 @@ rule all:
         expand("../plot/atac-seq_insert-size_{sample}.pdf", sample=SAMPLES),
         expand("../bam/{sample}.sortn_final_ummapped_try_plasmid.bam.flagstat", sample=SAMPLES),
         expand("../count_table/{sample}.TSS_2Kbp.count_table", sample=SAMPLES),
-        
-        
+        expand("../bam/{sample}.sortp_genome_rmchrM_rmdup.reheader.bam", sample=SAMPLES),
+        expand("../bigwig/{sample}.RPKM.bw", sample=SAMPLES),
 
-        
 # ------------------------------------------------------------------->>>>>>>>>>
 # trim adaptor
 # ------------------------------------------------------------------->>>>>>>>>>
@@ -271,18 +276,17 @@ rule plot_insert_size_distribution:
         "../bam/{sample}.sortp_genome_rmchrM_rmdup.bam"
     output:
         txt = "../plot/atac-seq_insert-size_{sample}.txt",
-        pdf = "../plot/atac-seq_insert-size_{sample}.pdf"
+        pdf = "../plot/atac-seq_insert-size_{sample}.pdf",
+        reheader_bam = "../bam/{sample}.sortp_genome_rmchrM_rmdup.reheader.bam"
     shell:
         """
-        {SAMTOOLS} reheader -c 'grep -v ^@PG' {input} > {input}.reheader.bam
-        
+        {SAMTOOLS} reheader -c 'grep -v ^@PG' {input} > {output.reheader_bam}
+        {SAMTOOLS} index {output.reheader_bam}
         {GATK4} CollectInsertSizeMetrics \
-            --INPUT {input}.reheader.bam \
+            --INPUT {output.reheader_bam} \
             --OUTPUT {output.txt} \
             --Histogram_FILE {output.pdf} \
             --METRIC_ACCUMULATION_LEVEL ALL_READS
-        
-        rm {input}.reheader.bam
         """
 # ------------------------------------------------------------------------------------------>>>>>>>>>>
 # pick_unmapped_reads step1 unmapped bam
@@ -372,6 +376,16 @@ rule bedtools_coverage:
             -g ref_data/genome_ucsc_hg38.fa.fai \
             -counts > {output}
         """
+rule bam2bigwig_RPKM:
+    input:
+        "../bam/{sample}.sortp_genome_rmchrM_rmdup.reheader.bam"
+    output:
+        "../bigwig/{sample}.RPKM.bw"
+    shell:
+        """
+        {BAM_COVERAGE} --bam {input} -o {output} -of bigwig --scaleFactor 1 --binSize 10 -p {THREAD} --normalizeUsing RPKM
+        """
+
 # # https://github.com/taoliu/MACS/issues/145
 # rule call_peaks_macs2:
 #     input: 
