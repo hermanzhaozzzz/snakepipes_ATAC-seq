@@ -4,6 +4,7 @@
 # E-mail: hermanzhaozzzz@gmail.com
 # Update log:
 #     2023-04-28: start project
+#     2023-08-29: pinned project
 # ——————————————————>>>>>>>>>>
 import os
 import json
@@ -123,7 +124,7 @@ rule fastp_trim_adaptor:
 # ------------------------------------------------------------------------------------------>>>>>>>>>>
 # BOWTIE2_INDEX_chrM
 rule bowtie2_align_chrM:
-    input:  # TODO改参数1000 2000  先mapping线粒体
+    input:  # 改参数1000 2000  先mapping线粒体
         "../fastq_trim_adaptor/{sample}_R1_cutadapt.fq.gz",
         "../fastq_trim_adaptor/{sample}_R2_cutadapt.fq.gz"
     output:
