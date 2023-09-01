@@ -71,6 +71,10 @@ assert check_cmd("macs2")
 assert check_cmd("bamCoverage")
 assert check_cmd("computeMatrix")
 assert check_cmd("plotHeatmap")
+assert check_cmd("Genrich")
+assert check_cmd("featureCounts")
+assert check_cmd("bioat")
+
 FASTP = "fastp"
 BOWTIE2 = 'bowtie2'
 BEDTOOLS = 'bedtools'
@@ -81,6 +85,9 @@ GATK4 = 'gatk'
 BAM_COVERAGE = 'bamCoverage'
 COMPUTE_MATRIX = 'computeMatrix'
 PLOT_HEATMAP = 'plotHeatmap'
+GENRICH = "Genrich"
+FEATURECOUNTS = "featureCounts"
+bioat = "bioat"
 # ------------------------------------------------------------------->>>>>>>>>>
 # rule all
 # ------------------------------------------------------------------->>>>>>>>>>
@@ -96,7 +103,13 @@ rule all:
         expand("../count_table/{sample}.TSS_2Kbp.count_table", sample=SAMPLES),
         expand("../bam/{sample}.sortp_genome_rmchrM_rmdup.reheader.bam", sample=SAMPLES),
         expand("../bigwig/{sample}.RPKM.bw", sample=SAMPLES),
-
+        expand("../peak_calling/{sample}.genrich_peaks.narrowPeak", sample=SAMPLES),
+        expand("../peak_calling/{sample}.macs2_peaks.narrowPeak", sample=SAMPLES),
+        expand("../peak_calling/{sample}.overlapped_peaks.narrowPeak", sample=SAMPLES),
+        expand("../peak_calling/{sample}.overlapped_peaks.saf", sample=SAMPLES),
+        expand("../peak_calling/{sample}.overlapped_peaks.counts", sample=SAMPLES),
+        expand("../peak_calling/{sample}.overlapped_peaks.counts.summary", sample=SAMPLES),
+        "../peak_calling/overlapped_peaks.counts.summary_all.tsv.gz"
 # ------------------------------------------------------------------->>>>>>>>>>
 # trim adaptor
 # ------------------------------------------------------------------->>>>>>>>>>
@@ -386,21 +399,99 @@ rule bam2bigwig_RPKM:
         """
         {BAM_COVERAGE} --bam {input} -o {output} -of bigwig --scaleFactor 1 --binSize 10 -p {THREAD} --normalizeUsing RPKM
         """
-
-# # https://github.com/taoliu/MACS/issues/145
-# rule call_peaks_macs2:
-#     input: 
-#         "../bam/{sample}.sortp_rmchrM.bam"
-#     output: 
-#         bed = "../macs2_callpeak/{sample}_macs2_peaks.broadPeak"
-#     params:
-#         name = lambda wildcards: wildcards['sample']
-#     log: 
-#         "../macs2_callpeak/{sample}_macs2_"
-#     shell:  # for macs2, when nomodel is set, --extsize is default to 200bp, this is the same as 2 * shift-size in macs14.
-#         """
-#         {MACS2} callpeak -t {input[0]} \
-#             --keep-dup all -f BAMPE -g {MACS2_GSIZE} -B \
-#             --outdir 06peak_macs2 -n {params.name} -p {config[macs2_pvalue]} \
-#             --broad --broad-cutoff {config[macs2_pvalue_broad]} &> {log}
-#         """
+# ------------------------------------------------------------------------------------------>>>>>>>>>>
+# peak calling use Genrich & MACS2
+# ------------------------------------------------------------------------------------------>>>>>>>>>>
+# Genrich has a mode dedicated to ATAC-Seq; however, Genrich is still not published
+# MACS2 is widely used so lots of help is available online
+# however it is designed for ChIP-seq rather than ATAC-seq (MACS3 has more ATAC-seq oriented features, but still lacks a stable release)
+rule sort_n_rmdup:
+    input:
+        "../bam/{sample}.sortp_genome_rmchrM_rmdup.bam"
+    output:
+        temp("../bam/{sample}.sortn_genome_rmchrM_rmdup.bam")
+    shell:
+        """
+        {SAMTOOLS} sort -@ {THREAD} -n -T ../temp_file/{input}.tmp -o {output} {input}
+        """
+rule call_peaks_genrich:
+    input:
+        "../bam/{sample}.sortn_genome_rmchrM_rmdup.bam"
+    output:
+        "../peak_calling/{sample}.genrich_peaks.narrowPeak"
+    log:
+        "../peak_calling/{sample}.genrich_peaks.narrowPeak.log"
+    shell:
+        """
+        {GENRICH} -j -t {input} -o {output} -d 100 > {log} 2>&1
+        """
+rule call_peaks_macs2:
+    input: 
+        "../bam/{sample}.sortn_genome_rmchrM_rmdup.bam"
+    output: 
+        "../peak_calling/{sample}.macs2_peaks.narrowPeak"
+    params:
+        name = lambda wildcards: f'../peak_calling/{wildcards["sample"]}.macs2'
+    log: 
+        "../peak_calling/{sample}.macs2_peaks.narrowPeak.log"
+    shell:
+        """
+        {MACS2} callpeak -t {input} \
+            --name {params.name} \
+            --format BAM \
+            --keep-dup all -g {MACS2_GSIZE} \
+            -q 0.05 \
+            --nomodel --shift -75 --extsize 150 \
+            --call-summits &> {log}
+        """
+rule peaks_overlap:
+    input: 
+        genrich="../peak_calling/{sample}.genrich_peaks.narrowPeak",
+        macs2="../peak_calling/{sample}.macs2_peaks.narrowPeak"
+    output: 
+        "../peak_calling/{sample}.overlapped_peaks.narrowPeak"
+    shell:
+        """
+        {BEDTOOLS} intersect \
+            -a {input.genrich}  -b {input.macs2} \
+            -f 0.50 -r > {output}
+        """
+rule get_saf_file:
+    input: 
+        "../peak_calling/{sample}.overlapped_peaks.narrowPeak",
+    output: 
+        "../peak_calling/{sample}.overlapped_peaks.saf"
+    params:
+        r"""-F '\t' 'BEGIN {OFS = FS}{ $2=$2+1; peakid="OverlappedNarrowPeak_"++nr;  print peakid,$1,$2,$3,"."}'"""
+    shell:
+        """
+        awk {params} {input} > {output}
+        """
+rule summarise_reads_featureCounts:
+    input:
+        saf="../peak_calling/{sample}.overlapped_peaks.saf",
+        bam="../bam/{sample}.sortn_genome_rmchrM_rmdup.bam"
+    output:
+        "../peak_calling/{sample}.overlapped_peaks.counts",
+        "../peak_calling/{sample}.overlapped_peaks.counts.summary"
+    shell:
+        """
+        if [[ `cat {input.saf} |wc -l` -eq 0 ]]; then 
+        echo "saf is empty" 
+        echo "will touch a empty file" 
+        touch {output[0]}
+        echo "Status\t{input.bam}" > {output[1]}
+        else
+        {FEATURECOUNTS} -T {THREAD} -p -F SAF -a {input.saf} --fracOverlap 0.2 -o {output[0]} {input.bam}
+        fi
+        """
+rule merge_counts_summary:
+    input:
+        expand("../peak_calling/{sample}.overlapped_peaks.counts.summary", sample=SAMPLES)
+    output:
+        "../peak_calling/overlapped_peaks.counts.summary_all.tsv.gz"
+    params:
+        inputs=lambda wildcards, input: ",".join(input),
+        tags=lambda wildcards, input: ",".join([i.split('/')[-1].split('.overlapped_peaks')[0] for i in input])
+    shell:
+        "{bioat} table merge {params.inputs} {params.tags} {output} --input_header False --output_header True"
